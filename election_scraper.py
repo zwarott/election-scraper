@@ -240,4 +240,4 @@ def main(input_link: str, output_file: str):
 
 
 if __name__ == "__main__":
-    print(valid_votes(links_lau2(parsed_html_lau1("https://volby.cz/pls/ps2017nss/ps32?xjazyk=CZ&xkraj=2&xnumnuts=2101"))))
+    main("https://volby.cz/pls/ps2017nss/ps32?xjazyk=CZ&xkraj=2&xnumnuts=2101", "lau1_benesov.csv")
