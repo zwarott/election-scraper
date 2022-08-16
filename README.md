@@ -33,7 +33,7 @@ python
   ```
   "lau1_blansko.csv"
   ```
-Code in IDE terminal:
+All arguments in IDE terminal:
   ```
   python "https://volby.cz/pls/ps2017nss/ps32?xjazyk=CZ&xkraj=11&xnumnuts=6201" "lau1_blansko.csv"
   ```
