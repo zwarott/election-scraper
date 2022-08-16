@@ -14,9 +14,9 @@ Required libraries and modules (see file "requirements.txt"):
 
 ### # STEP 2: Run the script `election_scraper.py`
 To run the script it is necessary to write 3 arguments into the IDE terminal:
-- **the first argument**: python argument in IDE terminal.
+- **the first argument**: python script file.
 ```
-python
+election_scraper.py
 ``` 
 
 - **the second argument**: URL of selected district
@@ -35,7 +35,7 @@ python
   ```
 All arguments in IDE terminal:
   ```
-  python "https://volby.cz/pls/ps2017nss/ps32?xjazyk=CZ&xkraj=11&xnumnuts=6201" "lau1_blansko.csv"
+  python election_scraper.py "https://volby.cz/pls/ps2017nss/ps32?xjazyk=CZ&xkraj=11&xnumnuts=6201" "lau1_blansko.csv"
   ```
 ### # STEP 3: Output `csv` file
 
