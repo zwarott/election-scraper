@@ -6,19 +6,19 @@ Email: zvardont@seznam.cz
 Discord: Tomáš Z.#3385
 """
 
+from sys import argv
+import os
+import csv
+import re
 from requests import get
 from bs4 import BeautifulSoup as bs
-import pandas as pd
-import re
 
 
 def valid_link(input_link: str) -> bool:
     """
     Check if input link is valid -> if is included in list of LAU1 links. LAU1 = district.
-
     :param input_link:
         String which represents user's input link.
-
     :return:
         True -> user's link is valid.
         False -> user's link is not valid.
@@ -34,210 +34,222 @@ def valid_link(input_link: str) -> bool:
 def parsed_html_lau1(input_link: str) -> bs:
     """
     Parse html code of input link.
-
     :param: input_link:
         String which represents user's input link.
-
     :return:
         Parsed html code.
     """
     return bs(get(input_link).text, features="html.parser")
 
 
-def mun_code(parsed_html: bs) -> list:
+def filtered_html(input_link: str):
     """
-    Generate list of municipality (LAU2) codes from input LAU1 link.
-
-    :param: parsed_html:
-        Parsed html code of input link.
-
+    Filter parsed html code of input link by <tr> (table row).
+    :param: input_link:
+        String which represents user's input link.
     :return:
-        List of municipality (LAU2) codes from certain LAU1 link.
+        Filtered parsed html code.
     """
-    code_elements = parsed_html.find_all('td', {"class": "cislo"})
-    return [int(code.find('a').text) for code in code_elements]
+    s = parsed_html_lau1(input_link)
+    return s.find_all("tr")
 
 
-def mun_name(parsed_html: bs) -> list:
+def id_lau2(input_link: str) -> list:
     """
-    Generate list of municipality (LAU2) names from certain parsed
-    LAU1 html code.
-
-    :param: parsed_html:
-        Parsed html code of input link.
-
+    Generate name and code for each municipality (LAU2) from
+    selected district (from input link).
+    :param: input_link:
+        String which represents user's input link.
     :return:
-        List of municipality (LAU2) names.
+        Nested lists of each municipality id [code, name] in
+        output list.
     """
-    # generate municipality names
-    name_elements = parsed_html.find_all('td', {"class": "overflow_name"})
-    names_mun = [name.text for name in name_elements]
-    return names_mun
+    muns = filtered_html(input_link)
+    muns_id = []
+    for mun in muns:
+        mun_code = mun.find("td", {"class": "cislo"})
+        mun_name = mun.find("td", {"class": "overflow_name"})
+        if mun_code:
+            muns_id.append([mun_code.text, mun_name.text])
+        else:
+            continue
+    return muns_id
 
 
 def links_lau2(parsed_html: bs) -> list:
     """
     Generate list of LAU2 links from certain parsed LAU1 link.
     LAU2 = municipality.
-
     :param parsed_html:
         Parsed html code of input link.
-
     :return:
         List of LAU2 links.
     """
-    links = []
-    for i in parsed_html.find_all("td", {"class": "cislo"}):
-        for x in i.find_all("a"):
-            links.append("https://volby.cz/pls/ps2017nss/" + x.get("href"))
+    links = ["https://volby.cz/pls/ps2017nss/" + x.get("href") for i in parsed_html.find_all("td", {"class": "cislo"})
+             for x in i.find_all("a")]
     return links
 
 
-def reg_voters(url_lau2: list) -> list:
+def elect_lau1(mun_url: list) -> list:
     """
-    Generate list of registered voters for all municipalities in certain district.
-
-    :param: url_lau2:
+    Generate data of registered voters, issued envelopes and
+    valid votes for each municipality (LAU2) from selected
+    district.
+    :param: mun_url:
         List of LAU2 links.
-
     :return:
-        List of registered voters for all municipalities in certain district.
+        Nested lists of electoral data for each LAU2 in
+        output list.
     """
-    voters_count = []
-    for x in url_lau2:
-        soup = bs(get(x).text, features="html.parser")
-        voters_elements = soup.find_all('td', headers='sa2')
+    elect_muns = []
+    for url in mun_url:
+        s = parsed_html_lau1(url)
+        # filter necessary data only
+        v = s.find("table", {"class": "table"})
+        # find data using indexing within table data
+        voters = v.find_all("td", {"class": "cislo"})[3].text.replace("\xa0", "")
+        envelopes = v.find_all("td", {"class": "cislo"})[4].text.replace("\xa0", "")
+        valid_votes = v.find_all("td", {"class": "cislo"})[7].text.replace("\xa0", "")
+        elect_muns.append([voters, envelopes, valid_votes])
+    return elect_muns
 
-        # eliminate space between
-        for voters in voters_elements:
-            x = voters.text.replace(u'\xa0', u'')
-            voters_count.append(x)
-    return voters_count
 
-
-def sub_envelopes(url_lau2: list) -> list:
+def elect_parties(mun_url: list) -> list:
     """
-    Generate list of issued envelopes for all municipalities in certain district.
-
-    :param: url_lau2:
+    Generate data of votes for each electoral party in each municipality (LAU2)
+    from selected district.
+    :param: mun_url:
         List of LAU2 links.
-
     :return:
-        List of issued envelopes for all municipalities in certain district.
+        Nested lists of electoral data for each LAU2 in output list.
     """
-    envelopes_count = []
-    for x in url_lau2:
-        result = get(x)
-        soup = bs(result.text, features="html.parser")
-        envelopes_elements = soup.find_all('td', headers='sa3')
+    p_votes = []
+    for url in mun_url:
+        s = parsed_html_lau1(url)
+        # filter necessary data only
+        votes = s.find_all("div", {"class": "t2_470"})
+        table_full = []
+        table_rows = []
+        mun_votes_sum = []
 
-        for envelopes in envelopes_elements:
-            x = envelopes.text.replace(u'\xa0', u'')
-            envelopes_count.append(x)
-    return envelopes_count
+        # operating with table rows
+        for vote in votes:
+            rows = vote.find_all("tr")
+            table_full.extend(rows)
 
+        # find all elements containing specific code associated with the numerical value
+        # of the electoral votes
+        for mun in table_full:
+            row = mun.find_all("td", headers="t1sb3") + mun.find_all("td", headers="t2sb3")
+            if row:
+                table_rows.append(row)
+            else:
+                continue
 
-def valid_votes(url_lau2: list) -> list:
-    """
-    Generate list of valid votes for all municipalities in certain district.
+        # get numerical values only and remove the thousand separator
+        for row in table_rows:
+            mun_votes_sum.append(row[0].text.replace("\xa0", ""))
+        p_votes.append(mun_votes_sum)
 
-    :param: url_lau2:
-        List of LAU2 links.
-
-    :return:
-        List of valid votes for all municipalities in certain district.
-    """
-    valid_votes_count = []
-    for x in url_lau2:
-        result = get(x)
-        soup = bs(result.text, features="html.parser")
-        valid_votes_elements = soup.find_all('td', headers='sa6')
-
-        for votes in valid_votes_elements:
-            x = votes.text.replace(u'\xa0', u'')
-            valid_votes_count.append(x)
-    return valid_votes_count
+    return p_votes
 
 
-def party_names() -> list:
+def party_names(input_link: str) -> list:
     """
     Generate list of available electoral party names for each municipality in certain district.
-
+    :param: input_link:
+        String which represents user's input link.
     :return:
         List of available electoral party names for each municipality in certain district.
     """
-    parties_link = "https://volby.cz/pls/ps2017nss/ps311?xjazyk=CZ&xkraj=2&xobec=529303&xvyber=2101"
-    split_html_parties = bs(get(parties_link).text, features="html.parser")
-    parties_elements = split_html_parties.find_all('td', class_='overflow_name')
+    parties_link = links_lau2(parsed_html_lau1(input_link))[0]
+    split_html_parties = parsed_html_lau1(parties_link)
+    parties_elements = split_html_parties.find_all("td", {"class": "overflow_name"})
     return [party.text for party in parties_elements]
 
 
-def party_votes(url_lau2: list) -> list:
+def table_header(input_link: str) -> list:
     """
-    Generate list of votes for each electoral party in all municipalities of certain district.
-
-    :param:m url_lau2:
-        List of LAU2 links.
-
-    :return:
-        List of votes for each electoral party in all municipalities of certain district.
-    """
-    party_votes_all = []
-    for x in url_lau2:
-        result = get(x)
-        soup = bs(result.text, features="html.parser")
-        party_votes_elements = soup.find_all('td', headers='t1sb3') + soup.find_all('td', headers='t2sb3')
-
-        for votes in party_votes_elements:
-            x = votes.text.replace(u'\xa0', u'')
-            party_votes_all.append(x)
-    return party_votes_all
-
-
-def main(input_link: str, output_file: str):
-    """
-    Main function to generate file of election results for municipalities
-    in the selected district.
-
+    Generate list of table header.
     :param: input_link:
         String which represents user's input link.
-
-    :param: output_file:
-        String which represents name of output file. Only *csv file
-        format is allowed.
-
     :return:
-        If True -> *csv file with election results for municipalities
-        in the selected district.
+        List of table header such as municipality code, municipality name, registered
+        voters, issued envelopes, valid votes and names of electoral parties.
     """
-    answer = parsed_html_lau1(input_link)
-    code = mun_code(answer)
-    location = mun_name(answer)
-    lau2_links = links_lau2(answer)
-    registered = reg_voters(lau2_links)
-    envelopes = sub_envelopes(lau2_links)
-    valid = valid_votes(lau2_links)
-    pn = party_names()
-    pv = party_votes(lau2_links)
-    double_sep = 50 * "="
+    headers = ["LAU2 Code", "LAU2 Name", "Voters", "Issued Envelopes", "Valid Votes"]
+    party_n = party_names(input_link)
+    # extend list of table header by names of electoral parties
+    headers.extend(party_n)
+    return headers
 
-    while not valid_link(input_link):
-        print(double_sep, "Your input link is not valid. Please, try again.", double_sep, sep="\n")
-        quit()
-    while not output_file.endswith('.csv'):
-        print(double_sep, "Please, save output file into *csv.", double_sep, sep="\n")
-        quit()
 
-    df = pd.DataFrame({"code": code, "location": location, "registered": registered, "envelopes": envelopes,
-                       "valid": valid, pn[0]: pv[0::26], pn[1]: pv[1::26], pn[2]: pv[2::26],
-                       pn[3]: pv[3::26], pn[4]: pv[4::26], pn[5]: pv[5::26], pn[6]: pv[6::26],
-                       pn[7]: pv[7::26], pn[8]: pv[8::26], pn[9]: pv[9::26], pn[10]: pv[10::26],
-                       pn[11]: pv[11::26], pn[12]: pv[12::26], pn[13]: pv[13::26], pn[14]: pv[14::26],
-                       pn[15]: pv[15::26], pn[16]: pv[16::26], pn[17]: pv[17::26], pn[18]: pv[18::26],
-                       pn[19]: pv[19::26], pn[20]: pv[20::26], pn[21]: pv[21::26], pn[22]: pv[22::26],
-                       pn[23]: pv[23::26], pn[24]: pv[24::26], pn[25]: pv[25::26]})
-    df.to_csv(output_file, encoding='utf-8')
+def mun_result(input_link: str) -> list:
+    """
+    Generate final list of electoral values for each municipality (LAU2) in certain district.
+    :param: input_link:
+        String which represents user's input link.
+    :return:
+        Nested lists of electoral data for each LAU2 in output list.
+    """
+    # LAU2 (municipality) links from certain parsed LAU1 link
+    mun_url = links_lau2(parsed_html_lau1(input_link))
+    # municipality id (code, name)
+    mun_res = id_lau2(input_link)
+    # general electoral data in municipalities (registered votes,
+    # issued envelopes, valid votes)
+    mun_voters = elect_lau1(mun_url)
+    # votes for electoral parties
+    el_parties = elect_parties(mun_url)
+    # assigning general electoral data for particular municipality
+    for g_votes in range(len(mun_res)):
+        mun_res[g_votes].extend(mun_voters[g_votes])
+    # assigning votes of electoral parties for particular municipality
+    for p_votes in range(len(mun_res)):
+        mun_res[p_votes].extend(el_parties[p_votes])
+    return mun_res
+
+
+def csv_export(input_link: str, output_file: str) -> csv:
+    """
+    Generate final output file of electoral data for selected district (LAU2).
+    :param: input_link:
+        String which represents user's input link.
+    :param: output_file:
+        Name of output file in format *csv.
+    :return:
+        Output file in *csv format containing electoral data for selected district (LAU2).
+    """
+    print(f"\u2193 Downloading data from input link: {input_link}", "Please, wait...", sep="\n")
+    muns = mun_result(input_link)
+    headers = table_header(input_link)
+    with open(output_file, "w", encoding="utf-8") as file:
+        w = csv.writer(file)
+        w.writerow(headers)
+        for row in muns:
+            w.writerow(row)
+
+
+def main():
+    # check right number of input arguments in terminal
+    if len(argv) != 3:
+        print("Wrong number of input arguments! Process terminated.")
+        quit()
+    # check if input link is valid -> is included in list of LAU1 links
+    elif valid_link(argv[1]) is not True:
+        print("Your input link is not valid! Process terminated.")
+        quit()
+    # check if output file is in *csv format
+    elif not argv[2].endswith('.csv'):
+        print("Please, save output file into *csv. Process terminated.")
+        quit()
+    # valid combination
+    else:
+        csv_export(argv[1], argv[2])
+    # path of output *csv file
+    path = os.path.abspath(argv[2])
+    print("\u2193 Data were successfully downloaded!", f"\u2192 Your file was saved into: {path}", sep="\n")
 
 
 if __name__ == "__main__":
-    main("https://volby.cz/pls/ps2017nss/ps32?xjazyk=CZ&xkraj=2&xnumnuts=2101", "lau1_benesov.csv")
+    main()
