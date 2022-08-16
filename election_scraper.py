@@ -131,12 +131,10 @@ def elect_parties(mun_url: list) -> list:
         table_full = []
         table_rows = []
         mun_votes_sum = []
-
         # operating with table rows
         for vote in votes:
             rows = vote.find_all("tr")
             table_full.extend(rows)
-
         # find all elements containing specific code associated with the numerical value
         # of the electoral votes
         for mun in table_full:
@@ -145,12 +143,10 @@ def elect_parties(mun_url: list) -> list:
                 table_rows.append(row)
             else:
                 continue
-
         # get numerical values only and remove the thousand separator
         for row in table_rows:
             mun_votes_sum.append(row[0].text.replace("\xa0", ""))
         p_votes.append(mun_votes_sum)
-
     return p_votes
 
 
